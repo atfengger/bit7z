@@ -92,6 +92,8 @@ auto find_format_by_extension( const tstring& extension ) -> const BitInFormat* 
             return &BitFormat::Deb;
         case str_hash( BIT7Z_STRING( "apfs" ) ):
             return &BitFormat::APFS;
+        case str_hash( BIT7Z_STRING( "avb" ) ):
+            return &BitFormat::AVB;
         case str_hash( BIT7Z_STRING( "apm" ) ):
             return &BitFormat::APM;
         case str_hash( BIT7Z_STRING( "arj" ) ):
@@ -209,6 +211,7 @@ auto find_format_by_signature( uint64_t signature ) noexcept -> const BitInForma
     constexpr auto kWimSignature = 0x4D5357494D000000ULL; // MSWIM 0x00 0x00 0x00
     constexpr auto kXzSignature = 0xFD377A585A000000ULL; // 0xFD 7zXZ 0x00
     constexpr auto kZipSignature = 0x504B000000000000ULL; // PK
+    constexpr auto kAvbSignature = 0x4156426600000000ULL; // AVBf 0x00 0x00 0x00
     constexpr auto kApmSignature = 0x4552000000000000ULL; // ER
     constexpr auto kArjSignature = 0x60EA000000000000ULL; // `EA
     constexpr auto kCabSignature = 0x4D53434600000000ULL; // MSCF 0x00 0x00 0x00 0x00
@@ -266,6 +269,8 @@ auto find_format_by_signature( uint64_t signature ) noexcept -> const BitInForma
             return &BitFormat::Xz;
         case kZipSignature:
             return &BitFormat::Zip;
+        case kAvbSignature:
+            return &BitFormat::AVB;
         case kApmSignature:
             return &BitFormat::APM;
         case kArjSignature:

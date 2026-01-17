@@ -166,10 +166,15 @@ if( WIN32 )
 endif()
 
 # Catch2
-include( cmake/Catch2.cmake )
-target_link_libraries( ${TESTS_TARGET} PRIVATE Catch2::Catch2 )
-target_link_libraries( ${TESTS_TARGET_PUBLIC} PRIVATE Catch2::Catch2 )
+CPMAddPackage( NAME Catch2
+               GIT_TAG 27d8db1770dd5cd3688656095f242474431584a1
+               OPTIONS "CATCH_CONFIG_CONSOLE_WIDTH 512" "CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS ON"
+               GITHUB_REPOSITORY "rikyoz/Catch2"
+               GIT_PROGRESS ON )
+list( APPEND CMAKE_MODULE_PATH "${Catch2_SOURCE_DIR}/contrib" )
 
 include( CTest )
 include( Catch )
+target_link_libraries( ${TESTS_TARGET} PRIVATE Catch2::Catch2 )
+target_link_libraries( ${TESTS_TARGET_PUBLIC} PRIVATE Catch2::Catch2 )
 catch_discover_tests( ${TESTS_TARGET} )

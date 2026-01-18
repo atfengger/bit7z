@@ -12,14 +12,16 @@
 
 #include <catch2/catch.hpp>
 
+#include "utils/filesystem.hpp"
+#include "utils/test.hpp"
+
 #include <bit7z/bitformat.hpp>
+#include <bit7z/bittypes.hpp>
 #include <internal/fsutil.hpp>
 
 #include <array>
 #include <vector>
 #include <map>
-
-#include "utils/filesystem.hpp"
 
 using std::vector;
 using std::map;
@@ -194,8 +196,8 @@ TEST_CASE( "fsutil: In-archive path computation", "[fsutil][in_archive_path]" ) 
     REQUIRE ( set_current_dir( test_filesystem_dir ) );
 
     // Note: since we are using the function fs::absolute(...), the content of this vector depends on the current
-    //       directory, hence we must declare the vector inside the test case and not outside!
-    const std::array< TestItem, 28 > testItems{ {
+    //       directory, hence we must declare the vector inside the test case and not outside.
+    const std::array< TestItem, 36 > testItems{ {
         { ".",                                                "" },
         { "./",                                               "" },
         { "..",                                               "" },
@@ -203,9 +205,17 @@ TEST_CASE( "fsutil: In-archive path computation", "[fsutil][in_archive_path]" ) 
         { "italy.svg",                                        "italy.svg" },
         { "folder",                                           "folder" },
         { "folder/",                                          "folder/" },
+        { "folder/..",                                        "" },
+        { "folder/../",                                       "" },
+        { "folder/.",                                         "folder" },
+        { "folder/./",                                        "folder" },
         { "folder/clouds.jpg",                                "folder/clouds.jpg" },
         { "folder/subfolder2",                                "folder/subfolder2" },
         { "folder/subfolder2/",                               "folder/subfolder2/" },
+        { "folder/subfolder2/..",                             "folder" },
+        { "folder/subfolder2/../",                            "folder" },
+        { "folder/subfolder2/.",                              "subfolder2" },
+        { "folder/subfolder2/./",                             "subfolder2" },
         { "folder/subfolder2/homework.doc",                   "folder/subfolder2/homework.doc" },
         { "./italy.svg",                                      "italy.svg" },
         { "./folder",                                         "folder" },
@@ -216,7 +226,7 @@ TEST_CASE( "fsutil: In-archive path computation", "[fsutil][in_archive_path]" ) 
         { "./../test_filesystem/",                            "test_filesystem" },
         { "./../test_filesystem/folder/",                     "folder" },
         { fs::absolute( "." ),                                "test_filesystem" },
-        { fs::absolute( "../" ),                              "data" },
+        { fs::absolute( "../" ),                              fs::path{ test_data_dir }.filename() },
         { fs::absolute( "./italy.svg" ),                      "italy.svg" },
         { fs::absolute( "./folder" ),                         "folder" },
         { fs::absolute( "./folder/" ),                        "folder" },
@@ -237,7 +247,7 @@ TEST_CASE( "fsutil: In-archive path computation", "[fsutil][in_archive_path]" ) 
 
 #endif
 
-#if defined( _WIN32 ) && defined( BIT7Z_AUTO_PREFIX_LONG_PATHS ) && !defined( BIT7Z_DISABLE_USE_STD_FILESYSTEM )
+#if defined( _WIN32 ) && defined( BIT7Z_AUTO_PREFIX_LONG_PATHS )
 TEST_CASE( "fsutil: Format long Windows paths", "[fsutil][format_long_path]" ) {
     SECTION( "Short paths should not be formatted" ) {
         REQUIRE_FALSE( should_format_long_path( L"short_path\\file.txt" ) );
@@ -294,351 +304,347 @@ TEST_CASE( "fsutil: Format long Windows paths", "[fsutil][format_long_path]" ) {
 #endif
 
 #if defined( _WIN32 ) && defined( BIT7Z_PATH_SANITIZATION )
+namespace {
+struct SanitizationTest {
+    const native_char* path;
+    const native_char* expectedPath;
+};
+
+using bit7z::test::quoted;
+} // namespace
+
 TEST_CASE( "fsutil: Sanitizing Windows paths", "[fsutil][sanitize_path]" ) {
-    REQUIRE( sanitize_path( L"" ) == L"" );
+    SECTION( "Empty and whitespace inputs" ) {
+        const auto test = GENERATE(
+            SanitizationTest{ L"", L"" },
+            SanitizationTest{ L" ", L"_" },
+            SanitizationTest{ L"                  ", L"_" },
+            SanitizationTest{ L"\t", L"_" },  // Tab character
+            SanitizationTest{ L"   \t   ", L"   _   " }
+        );
 
-    REQUIRE( sanitize_path( L"hello world.txt" ) == L"hello world.txt" );
-    REQUIRE( sanitize_path( L"hello?world<" ) == L"hello_world_" );
-    REQUIRE( sanitize_path( L":hello world|" ) == L"_hello world_" );
-    REQUIRE( sanitize_path( L"hello?world<.txt" ) == L"hello_world_.txt" );
-    REQUIRE( sanitize_path( L":hello world|.txt" ) == L"_hello world_.txt" );
+        DYNAMIC_SECTION( quoted( test.path ) << " -> " << quoted( test.expectedPath ) ) {
+            REQUIRE( sanitize_path( test.path ) == test.expectedPath );
+        }
+    }
 
-    REQUIRE( sanitize_path( L"COM0" ) == L"_COM0" );
-    REQUIRE( sanitize_path( L"COM0.txt" ) == L"COM0.txt" );
-    REQUIRE( sanitize_path( L"LPT9" ) == L"_LPT9" );
-    REQUIRE( sanitize_path( L"LPT9.txt" ) == L"LPT9.txt" );
-    REQUIRE( sanitize_path( L"COM42" ) == L"COM42" );
-    REQUIRE( sanitize_path( L"LPT42" ) == L"LPT42" );
+    SECTION( "Control characters (ASCII 0-31) replacement" ) {
+        const auto controlChar = GENERATE( range( 1, 32 ) );  // Skip null
 
-    REQUIRE( sanitize_path( L"CON" ) == L"_CON" );
-    REQUIRE( sanitize_path( L"PRN" ) == L"_PRN" );
-    REQUIRE( sanitize_path( L"AUX" ) == L"_AUX" );
-    REQUIRE( sanitize_path( L"NUL" ) == L"_NUL" );
-    REQUIRE( sanitize_path( L"CONO" ) == L"CONO" );
-    REQUIRE( sanitize_path( L"PRNG" ) == L"PRNG" );
-    REQUIRE( sanitize_path( L"AUXI" ) == L"AUXI" );
-    REQUIRE( sanitize_path( L"NULL" ) == L"NULL" );
+        std::wstring input = L"test";
+        input += static_cast< wchar_t >( controlChar );
+        input += L"file.txt";
 
-    REQUIRE( sanitize_path( L"/" ) == L"_" );
-    REQUIRE( sanitize_path( L"//" ) == L"_" );
-    REQUIRE( sanitize_path( L"//////////////" ) == L"_" );
-    REQUIRE( sanitize_path( L"/\\" ) == L"_" );
-    REQUIRE( sanitize_path( L"////////\\\\\\\\" ) == L"_" );
-    REQUIRE( sanitize_path( L"\\" ) == L"_" );
-    REQUIRE( sanitize_path( L"\\\\" ) == L"_" );
-    REQUIRE( sanitize_path( L"\\\\\\\\\\\\" ) == L"_" );
-    REQUIRE( sanitize_path( L"\\/" ) == L"_" );
-    REQUIRE( sanitize_path( L"\\\\\\\\////////" ) == L"_" );
-    REQUIRE( sanitize_path( L"/abc" ) == L"abc" );
-    REQUIRE( sanitize_path( L"//abc" ) == L"abc" );
-    REQUIRE( sanitize_path( L"//////////abc" ) == L"abc" );
-    REQUIRE( sanitize_path( L"/\\abc" ) == L"abc" );
-    REQUIRE( sanitize_path( L"////////\\\\\\\\abc" ) == L"abc" );
-    REQUIRE( sanitize_path( L"\\abc" ) == L"abc" );
-    REQUIRE( sanitize_path( L"\\\\abc" ) == L"abc" );
-    REQUIRE( sanitize_path( L"\\\\\\\\\\\\\\\\\\abc" ) == L"abc" );
-    REQUIRE( sanitize_path( L"\\/abc" ) == L"abc" );
-    REQUIRE( sanitize_path( L"\\\\\\\\////////abc" ) == L"abc" );
-    REQUIRE( sanitize_path( L"/abc/" ) == L"abc\\" );
-    REQUIRE( sanitize_path( L"/abc//" ) == L"abc\\" );
-    REQUIRE( sanitize_path( L"/abc/\\" ) == L"abc\\" );
-    REQUIRE( sanitize_path( L"/abc\\" ) == L"abc\\" );
-    REQUIRE( sanitize_path( L"/abc\\\\" ) == L"abc\\" );
-    REQUIRE( sanitize_path( L"/abc\\/" ) == L"abc\\" );
-    REQUIRE( sanitize_path( L"\\abc/" ) == L"abc\\" );
-    REQUIRE( sanitize_path( L"\\abc\\" ) == L"abc\\" );
-    REQUIRE( sanitize_path( L"\\\\abc\\" ) == L"abc\\" );
-    REQUIRE( sanitize_path( L"/abc/NUL/def" ) == L"abc\\_NUL\\def" );
-    REQUIRE( sanitize_path( L"\\abc\\NUL\\def" ) == L"abc\\_NUL\\def" );
+        INFO( "Control char: " << controlChar );
+        const auto result = sanitize_path( input );
+        REQUIRE( result == L"test_file.txt" );
+    }
 
-    REQUIRE( sanitize_path( L"C:" ) == L"C_" );
-    REQUIRE( sanitize_path( L"C:/" ) == L"C_\\" );
-    REQUIRE( sanitize_path( L"C://" ) == L"C_\\" );
-    REQUIRE( sanitize_path( L"C:/\\" ) == L"C_\\" );
-    REQUIRE( sanitize_path( L"C:\\" ) == L"C_\\" );
-    REQUIRE( sanitize_path( L"C:\\\\" ) == L"C_\\" );
-    REQUIRE( sanitize_path( L"C:\\/" ) == L"C_\\" );
-    REQUIRE( sanitize_path( L"C:/abc" ) == L"C_\\abc" );
-    REQUIRE( sanitize_path( L"C://abc" ) == L"C_\\abc" );
-    REQUIRE( sanitize_path( L"C:/\\abc" ) == L"C_\\abc" );
-    REQUIRE( sanitize_path( L"C:\\abc" ) == L"C_\\abc" );
-    REQUIRE( sanitize_path( L"C:\\\\abc" ) == L"C_\\abc" );
-    REQUIRE( sanitize_path( L"C:\\/abc" ) == L"C_\\abc" );
-    REQUIRE( sanitize_path( L"C:/abc/" ) == L"C_\\abc\\" );
-    REQUIRE( sanitize_path( L"C:/abc\\" ) == L"C_\\abc\\" );
-    REQUIRE( sanitize_path( L"C:\\abc/" ) == L"C_\\abc\\" );
-    REQUIRE( sanitize_path( L"C:\\abc\\" ) == L"C_\\abc\\" );
-    REQUIRE( sanitize_path( L"C:/abc/NUL/def" ) == L"C_\\abc\\_NUL\\def" );
-    REQUIRE( sanitize_path( L"C:/abc//NUL/def" ) == L"C_\\abc\\_NUL\\def" );
-    REQUIRE( sanitize_path( L"C:/abc/\\NUL/def" ) == L"C_\\abc\\_NUL\\def" );
-    REQUIRE( sanitize_path( L"C:\\abc\\NUL\\def" ) == L"C_\\abc\\_NUL\\def" );
-    REQUIRE( sanitize_path( L"C:\\abc\\\\NUL\\def" ) == L"C_\\abc\\_NUL\\def" );
-    REQUIRE( sanitize_path( L"C:\\abc\\/NUL\\def" ) == L"C_\\abc\\_NUL\\def" );
-    REQUIRE( sanitize_path( L"C:\\abc\\NUL\\def" ) == L"C_\\abc\\_NUL\\def" );
+    SECTION( "Reserved characters replacement" ) {
+        const auto test = GENERATE(
+            SanitizationTest{ L"hello world.txt", L"hello world.txt" },
+            SanitizationTest{ L"hello\tworld.txt", L"hello_world.txt" },
+            SanitizationTest{ L"hello\t\rworld.txt", L"hello__world.txt" },
+            SanitizationTest{ L"hello?world<", L"hello_world_" },
+            SanitizationTest{ L":hello world|", L"_hello world_" },
+            SanitizationTest{ L"hello?world<.txt", L"hello_world_.txt" },
+            SanitizationTest{ L":hello world|.txt", L"_hello world_.txt" },
+            SanitizationTest{ L"file<>:\"|?*.txt", L"file_______.txt" }
+        );
 
-    REQUIRE( sanitize_path( L"C:/Test/COM0/hello?world<.txt" ) == L"C_\\Test\\_COM0\\hello_world_.txt" );
-    REQUIRE( sanitize_path( L"C:\\Test\\COM0\\hello?world<.txt" ) == L"C_\\Test\\_COM0\\hello_world_.txt" );
-    REQUIRE( sanitize_path( L"Test/COM0/hello?world<.txt" ) == L"Test\\_COM0\\hello_world_.txt" );
-    REQUIRE( sanitize_path( L"Test\\COM0\\hello?world<.txt" ) == L"Test\\_COM0\\hello_world_.txt" );
-    REQUIRE( sanitize_path( L"../COM0/hello?world<.txt" ) == L"..\\_COM0\\hello_world_.txt" );
-    REQUIRE( sanitize_path( L"..\\COM0\\hello?world<.txt" ) == L"..\\_COM0\\hello_world_.txt" );
-    REQUIRE( sanitize_path( L"./COM0/hello?world<.txt" ) == L".\\_COM0\\hello_world_.txt" );
-    REQUIRE( sanitize_path( L".\\COM0\\hello?world<.txt" ) == L".\\_COM0\\hello_world_.txt" );
-    REQUIRE( sanitize_path( L"COM0/hello?world<.txt" ) == L"_COM0\\hello_world_.txt" );
-    REQUIRE( sanitize_path( L"COM0\\hello?world<.txt" ) == L"_COM0\\hello_world_.txt" );
+        DYNAMIC_SECTION( quoted( test.path ) << " -> " << quoted( test.expectedPath ) ) {
+            REQUIRE( sanitize_path( test.path ) == test.expectedPath );
+        }
+    }
 
-    REQUIRE( sanitize_path( L"C:/Test/:hello world|/LPT5" ) == L"C_\\Test\\_hello world_\\_LPT5" );
-    REQUIRE( sanitize_path( L"C:\\Test\\:hello world|\\LPT5" ) == L"C_\\Test\\_hello world_\\_LPT5" );
-    REQUIRE( sanitize_path( L"Test/:hello world|/LPT5" ) == L"Test\\_hello world_\\_LPT5" );
-    REQUIRE( sanitize_path( L"Test\\:hello world|\\LPT5" ) == L"Test\\_hello world_\\_LPT5" );
-    REQUIRE( sanitize_path( L"../:hello world|/LPT5" ) == L"..\\_hello world_\\_LPT5" );
-    REQUIRE( sanitize_path( L"..\\:hello world|\\LPT5" ) == L"..\\_hello world_\\_LPT5" );
-    REQUIRE( sanitize_path( L"./:hello world|/LPT5" ) == L".\\_hello world_\\_LPT5" );
-    REQUIRE( sanitize_path( L".\\:hello world|\\LPT5" ) == L".\\_hello world_\\_LPT5" );
-    REQUIRE( sanitize_path( L":hello world|/LPT5" ) == L"_hello world_\\_LPT5" );
-    REQUIRE( sanitize_path( L":hello world|\\LPT5" ) == L"_hello world_\\_LPT5" );
-}
+    SECTION( "COM and LPT reserved names and all their case variations" ) {
+        const auto *const reservedName = GENERATE( L"COM", L"LPT" );
+        const auto caseVariation = GENERATE_REF( test::casePermutations( reservedName ) );
+        const auto digit = GENERATE( range( 0, 10 ) );
 
-TEST_CASE( "fsutil: Sanitizing and concatenate Windows paths", "[fsutil][sanitized_extraction_path]" ) {
-    REQUIRE( sanitized_extraction_path( L"", L"abc" ) == L"abc" );
-    REQUIRE( sanitized_extraction_path( L"", L"/" ) == L"_" );
-    REQUIRE( sanitized_extraction_path( L"", L"/abc" ) == L"abc" );
-    REQUIRE( sanitized_extraction_path( L"", L"\\\\abc" ) == L"abc" );
-    REQUIRE( sanitized_extraction_path( L"", L"C:/abc" ) == L"C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"", L"\\" ) == L"_" );
-    REQUIRE( sanitized_extraction_path( L"", L"\\abc" ) == L"abc" );
-    REQUIRE( sanitized_extraction_path( L"", L"C:\\abc" ) == L"C_\\abc" );
+        const auto input = caseVariation + std::to_wstring( digit );
+        const auto expected = L"_" + input;
 
-    REQUIRE( sanitized_extraction_path( L"/", L"abc" ) == L"\\abc" );
-    REQUIRE( sanitized_extraction_path( L"/", L"/" ) == L"\\_" );
-    REQUIRE( sanitized_extraction_path( L"/", L"/abc" ) == L"\\abc" );
-    REQUIRE( sanitized_extraction_path( L"/", L"C:/abc" ) == L"\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"/", L"\\" ) == L"\\_" );
-    REQUIRE( sanitized_extraction_path( L"/", L"\\abc" ) == L"\\abc" );
-    REQUIRE( sanitized_extraction_path( L"/", L"C:\\abc" ) == L"\\C_\\abc" );
+        DYNAMIC_SECTION( quoted( input ) << " -> " << quoted( expected ) ) {
+            REQUIRE( sanitize_path( input ) == expected );
+        }
+    }
 
-    REQUIRE( sanitized_extraction_path( L"/def", L"abc" ) == L"\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"/def", L"/" ) == L"\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"/def", L"/abc" ) == L"\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"/def", L"C:/abc" ) == L"\\def\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"/def", L"\\" ) == L"\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"/def", L"\\abc" ) == L"\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"/def", L"C:\\abc" ) == L"\\def\\C_\\abc" );
+    SECTION( "Superscript digits in COM/LPT reserved names" ) {
+        const auto *const reservedName = GENERATE( L"COM", L"LPT" );
+        const auto caseVariation = GENERATE_REF( test::casePermutations( reservedName ) );
+        const auto *const superscriptDigit = GENERATE( L"¹", L"²", L"³" );
 
-    // GHC library is a bit buggy in these edge cases.
-#ifndef GHC_FILESYSTEM_VERSION
-    REQUIRE( sanitized_extraction_path( L"//", L"abc" ) == L"//abc" );
-    REQUIRE( sanitized_extraction_path( L"//", L"/" ) == L"//_" );
-    REQUIRE( sanitized_extraction_path( L"//", L"/abc" ) == L"//abc" );
-    REQUIRE( sanitized_extraction_path( L"//", L"C:/abc" ) == L"//C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"//", L"\\" ) == L"//_" );
-    REQUIRE( sanitized_extraction_path( L"//", L"\\abc" ) == L"//abc" );
-    REQUIRE( sanitized_extraction_path( L"//", L"C:\\abc" ) == L"//C_\\abc" );
+        const auto input = caseVariation + superscriptDigit;
+        const auto expected = L"_" + input;
 
-    REQUIRE( sanitized_extraction_path( L"//server", L"abc" ) == L"//server\\abc" );
-    REQUIRE( sanitized_extraction_path( L"//server", L"/" ) == L"//server\\_" );
-    REQUIRE( sanitized_extraction_path( L"//server", L"/abc" ) == L"//server\\abc" );
-    REQUIRE( sanitized_extraction_path( L"//server", L"C:/abc" ) == L"//server\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"//server", L"\\" ) == L"//server\\_" );
-    REQUIRE( sanitized_extraction_path( L"//server", L"\\abc" ) == L"//server\\abc" );
-    REQUIRE( sanitized_extraction_path( L"//server", L"C:\\abc" ) == L"//server\\C_\\abc" );
-#endif
+        DYNAMIC_SECTION( quoted( input ) << " -> " << quoted( expected ) ) {
+            REQUIRE( sanitize_path( input ) == expected );
+        }
+    }
 
-    REQUIRE( sanitized_extraction_path( L"\\", L"abc" ) == L"\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\", L"/" ) == L"\\_" );
-    REQUIRE( sanitized_extraction_path( L"\\", L"/abc" ) == L"\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\", L"C:/abc" ) == L"\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\", L"\\" ) == L"\\_" );
-    REQUIRE( sanitized_extraction_path( L"\\", L"\\abc" ) == L"\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\", L"C:\\abc" ) == L"\\C_\\abc" );
+    SECTION( "Other reserved names" ) {
+        const auto *const reservedName = GENERATE( L"CON", L"PRN",L"AUX", L"NUL", L"CONIN$", L"CONOUT$" );
+        const auto caseVariation = GENERATE_REF( test::casePermutations( reservedName ) );
 
+        const auto expected = L"_" + caseVariation;
 
-    REQUIRE( sanitized_extraction_path( L"\\def", L"abc" ) == L"\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\def", L"/" ) == L"\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"\\def", L"/abc" ) == L"\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\def", L"C:/abc" ) == L"\\def\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\def", L"\\" ) == L"\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"\\def", L"\\abc" ) == L"\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\def", L"C:\\abc" ) == L"\\def\\C_\\abc" );
+        DYNAMIC_SECTION( quoted( caseVariation ) << " -> " << quoted( expected ) ) {
+            REQUIRE( sanitize_path( caseVariation ) == expected );
+            REQUIRE( sanitize_path( L" " + caseVariation ) == L" " + expected );
+            REQUIRE( sanitize_path( L"      " + caseVariation ) == L"      " + expected );
+        }
+    }
 
-    // GHC library is a bit buggy in these edge cases.
-#ifndef GHC_FILESYSTEM_VERSION
-    REQUIRE( sanitized_extraction_path( L"\\\\", L"abc" ) == L"\\\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\\\", L"/" ) == L"\\\\_" );
-    REQUIRE( sanitized_extraction_path( L"\\\\", L"/abc" ) == L"\\\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\\\", L"C:/abc" ) == L"\\\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\\\", L"\\" ) == L"\\\\_" );
-    REQUIRE( sanitized_extraction_path( L"\\\\", L"\\abc" ) == L"\\\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\\\", L"C:\\abc" ) == L"\\\\C_\\abc" );
+    SECTION( "Names that look like reserved but aren't" ) {
+        const auto *const testPath = GENERATE(
+            L"COM0.txt",  // Has extension.
+            L"LPT9.txt",
+            L"COM42",     // Extra letter.
+            L"LPT42",
+            L"COMM",
+            L"LPTT",
+            L"CONO",
+            L"PRNG",
+            L"AUXI",
+            L"NULL",
+            L"COM",       // Missing final digit from reserved name.
+            L"LPT",
+            L"COM⁰",      // Superscript digits other than ¹, ², and ³ are valid names.
+            L"LPT⁰",
+            L"COM⁴",
+            L"LPT⁴",
+            L"COM⁵",
+            L"LPT⁵",
+            L"COM⁶",
+            L"LPT⁶",
+            L"COM⁷",
+            L"LPT⁷",
+            L"COM⁸",
+            L"LPT⁸",
+            L"COM⁹",
+            L"LPT⁹",
+            L"CON0"       // CON reserved name doesn't take digits.
+        );
 
-    REQUIRE( sanitized_extraction_path( L"\\\\server", L"abc" ) == L"\\\\server\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\\\server", L"/" ) == L"\\\\server\\_" );
-    REQUIRE( sanitized_extraction_path( L"\\\\server", L"/abc" ) == L"\\\\server\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\\\server", L"C:/abc" ) == L"\\\\server\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\\\server", L"\\" ) == L"\\\\server\\_" );
-    REQUIRE( sanitized_extraction_path( L"\\\\server", L"\\abc" ) == L"\\\\server\\abc" );
-    REQUIRE( sanitized_extraction_path( L"\\\\server", L"C:\\abc" ) == L"\\\\server\\C_\\abc" );
-#endif
+        DYNAMIC_SECTION( "The path " << quoted( testPath ) << " should NOT be treated as reserved" ) {
+            REQUIRE( sanitize_path( testPath ) == testPath );
+        }
+    }
 
-    REQUIRE( sanitized_extraction_path( L"out", L"abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out", L"/" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out", L"/abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out", L"C:/abc" ) == L"out\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out", L"\\" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out", L"\\abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out", L"C:\\abc" ) == L"out\\C_\\abc" );
+    const auto makeSpaces = []( int count ) -> std::wstring { return std::wstring( count, L' ' ); };
 
-    REQUIRE( sanitized_extraction_path( L"out/", L"abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out/", L"/" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out/", L"/abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out/", L"C:/abc" ) == L"out\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out/", L"\\" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out/", L"\\abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out/", L"C:\\abc" ) == L"out\\C_\\abc" );
+    SECTION( "Leading slashes are stripped, spaces are converted to underscores" ) {
+        const std::wstring slashPattern = GENERATE(
+            L"/",
+            L"\\",
+            L"//",
+            L"\\\\",
+            L"//////",
+            L"\\\\\\\\\\\\",
+            L"/\\",
+            L"\\/",
+            L"//\\\\",
+            L"\\\\//",
+            L"////////\\\\\\\\",
+            L"\\\\\\\\////////",
+            L"/\\/\\/\\/\\/\\/\\",
+            L"\\/\\/\\/\\/\\/\\/"
+        );
 
-    REQUIRE( sanitized_extraction_path( L"out/\\", L"abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out/\\", L"/" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out/\\", L"/abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out/\\", L"C:/abc" ) == L"out\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out/\\", L"\\" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out/\\", L"\\abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out/\\", L"C:\\abc" ) == L"out\\C_\\abc" );
+        DYNAMIC_SECTION( "Basic slash pattern " << quoted( slashPattern ) ) {
+            SECTION( "With no spaces" ) {
+                // Component with only slashes becomes "_" (prevents creating empty paths).
+                REQUIRE( sanitize_path( slashPattern ) == L"_" );
 
-    REQUIRE( sanitized_extraction_path( L"out\\", L"abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\", L"/" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out\\", L"/abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\", L"C:/abc" ) == L"out\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\", L"\\" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out\\", L"\\abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\", L"C:\\abc" ) == L"out\\C_\\abc" );
+                // Leading slashes are stripped.
+                REQUIRE( sanitize_path( slashPattern + L"abc" ) == L"abc" );
 
-    REQUIRE( sanitized_extraction_path( L"out\\/", L"abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\/", L"/" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out\\/", L"/abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\/", L"C:/abc" ) == L"out\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\/", L"\\" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out\\/", L"\\abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\/", L"C:\\abc" ) == L"out\\C_\\abc" );
+                // Trailing slashes create an empty component (e.g., "/abc" -> components: ["abc", ""] -> "abc\".
+                REQUIRE( sanitize_path( L"abc" + slashPattern ) == L"abc\\" );
 
-    REQUIRE( sanitized_extraction_path( L"out\\\\", L"abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\\\", L"/" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out\\\\", L"/abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\\\", L"C:/abc" ) == L"out\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\\\", L"\\" ) == L"out\\_" );
-    REQUIRE( sanitized_extraction_path( L"out\\\\", L"\\abc" ) == L"out\\abc" );
-    REQUIRE( sanitized_extraction_path( L"out\\\\", L"C:\\abc" ) == L"out\\C_\\abc" );
+                // Leading slashes are stripped, trailing ones create an empty component -> ["abc", ""] -> "abc\".
+                REQUIRE( sanitize_path( slashPattern + L"abc" + slashPattern ) == L"abc\\" );
+            }
 
-    REQUIRE( sanitized_extraction_path( L"C:", L"abc" ) == L"C:abc" );
-    REQUIRE( sanitized_extraction_path( L"C:", L"/" ) == L"C:_" );
-    REQUIRE( sanitized_extraction_path( L"C:", L"/abc" ) == L"C:abc" );
-    REQUIRE( sanitized_extraction_path( L"C:", L"C:/abc" ) == L"C:C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:", L"\\" ) == L"C:_" );
-    REQUIRE( sanitized_extraction_path( L"C:", L"\\abc" ) == L"C:abc" );
-    REQUIRE( sanitized_extraction_path( L"C:", L"C:\\abc" ) == L"C:C_\\abc" );
+            SECTION( "With spaces" ) {
+                const auto spaceCount = GENERATE( 1, 6 );
 
-    REQUIRE( sanitized_extraction_path( L"C:/", L"abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/", L"/" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:/", L"/abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/", L"C:/abc" ) == L"C:\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/", L"\\" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:/", L"\\abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/", L"C:\\abc" ) == L"C:\\C_\\abc" );
+                INFO( spaceCount << " spaces" );
+                const auto spaces = makeSpaces( spaceCount );
 
-    REQUIRE( sanitized_extraction_path( L"C://", L"abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C://", L"/" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C://", L"/abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C://", L"C:/abc" ) == L"C:\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C://", L"\\" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C://", L"\\abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C://", L"C:\\abc" ) == L"C:\\C_\\abc" );
+                // Leading spaces + slashes -> components: [spaces, ""] -> "_\".
+                REQUIRE( sanitize_path( spaces + slashPattern ) == L"_\\" );
 
-    REQUIRE( sanitized_extraction_path( L"C:/\\", L"abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/\\", L"/" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:/\\", L"/abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/\\", L"C:/abc" ) == L"C:\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/\\", L"\\" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:/\\", L"\\abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/\\", L"C:\\abc" ) == L"C:\\C_\\abc" );
+                // Two spaces-only components, both become "_".
+                REQUIRE( sanitize_path( spaces + slashPattern + spaces ) == L"_\\_" );
 
-    REQUIRE( sanitized_extraction_path( L"C:\\", L"abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\", L"/" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\", L"/abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\", L"C:/abc" ) == L"C:\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\", L"\\" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\", L"\\abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\", L"C:\\abc" ) == L"C:\\C_\\abc" );
+                // Leading spaces in filenames are preserved (Windows allows this).
+                REQUIRE( sanitize_path( spaces + L"abc" ) == spaces + L"abc" );
 
-    REQUIRE( sanitized_extraction_path( L"C:\\\\", L"abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\\\", L"/" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\\\", L"/abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\\\", L"C:/abc" ) == L"C:\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\\\", L"\\" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\\\", L"\\abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\\\", L"C:\\abc" ) == L"C:\\C_\\abc" );
+                // One spaces-only component -> "_", separator(s), filename with leading spaces (kept).
+                REQUIRE( sanitize_path( spaces + slashPattern + spaces + L"abc" ) == L"_\\" + spaces + L"abc" );
 
-    REQUIRE( sanitized_extraction_path( L"C:\\/", L"abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\/", L"/" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\/", L"/abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\/", L"C:/abc" ) == L"C:\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\/", L"\\" ) == L"C:\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\/", L"\\abc" ) == L"C:\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\/", L"C:\\abc" ) == L"C:\\C_\\abc" );
+                // Leading slash(es) stripped, filename with leading spaces preserved.
+                REQUIRE( sanitize_path( slashPattern + spaces + L"abc" ) == spaces + L"abc" );
 
-    REQUIRE( sanitized_extraction_path( L"C:/def", L"abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def", L"/" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:/def", L"/abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def", L"C:/abc" ) == L"C:\\def\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def", L"\\" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:/def", L"\\abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def", L"C:\\abc" ) == L"C:\\def\\C_\\abc" );
+                // Leading slash(es) stripped, space-only component becomes "_".
+                REQUIRE( sanitize_path( slashPattern + spaces ) == L"_" );
 
-    REQUIRE( sanitized_extraction_path( L"C:\\def", L"abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def", L"/" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def", L"/abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def", L"C:/abc" ) == L"C:\\def\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def", L"\\" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def", L"\\abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def", L"C:\\abc" ) == L"C:\\def\\C_\\abc" );
+                // Trailing spaces in component are preserved (OS will ignore them).
+                REQUIRE( sanitize_path( slashPattern + L"abc" + spaces ) == L"abc"  + spaces );
 
-    REQUIRE( sanitized_extraction_path( L"C:/def/", L"abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def/", L"/" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:/def/", L"/abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def/", L"C:/abc" ) == L"C:\\def\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def/", L"\\" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:/def/", L"\\abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def/", L"C:\\abc" ) == L"C:\\def\\C_\\abc" );
+                // Trailing spaces-only component becomes "_".
+                REQUIRE( sanitize_path( slashPattern + L"abc" + slashPattern + spaces ) == L"abc\\_" );
 
-    REQUIRE( sanitized_extraction_path( L"C:/def\\", L"abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def\\", L"/" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:/def\\", L"/abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def\\", L"C:/abc" ) == L"C:\\def\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def\\", L"\\" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:/def\\", L"\\abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:/def\\", L"C:\\abc" ) == L"C:\\def\\C_\\abc" );
+                if ( slashPattern.size() > 1 ) {
+                    const auto midpoint = slashPattern.size() / 2;
 
-    REQUIRE( sanitized_extraction_path( L"C:\\def/", L"abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def/", L"/" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def/", L"/abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def/", L"C:/abc" ) == L"C:\\def\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def/", L"\\" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def/", L"\\abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def/", L"C:\\abc" ) == L"C:\\def\\C_\\abc" );
+                    const auto left = slashPattern.substr( 0, midpoint );
+                    const auto right = slashPattern.substr( midpoint );
 
-    REQUIRE( sanitized_extraction_path( L"C:\\def\\", L"abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def\\", L"/" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def\\", L"/abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def\\", L"C:/abc" ) == L"C:\\def\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def\\", L"\\" ) == L"C:\\def\\_" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def\\", L"\\abc" ) == L"C:\\def\\abc" );
-    REQUIRE( sanitized_extraction_path( L"C:\\def\\", L"C:\\abc" ) == L"C:\\def\\C_\\abc" );
+                    // All slashes and spaces combinations turn into "_\"
+                    const auto spacedSlashes = left + spaces + right;
 
-    REQUIRE( sanitized_extraction_path( L"D:", L"C:/abc" ) == L"D:C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"D:", L"C:\\abc" ) == L"D:C_\\abc" );
+                    REQUIRE( sanitize_path( spacedSlashes ) == L"_\\" );
+                    REQUIRE( sanitize_path( spacedSlashes + L"abc" ) == L"_\\abc" );
+                    REQUIRE( sanitize_path( spacedSlashes + L"abc" + spacedSlashes ) == L"_\\abc\\_\\" );
+                    REQUIRE( sanitize_path( spacedSlashes + spaces ) == L"_\\_" );
 
-    REQUIRE( sanitized_extraction_path( L"D:/", L"C:/abc" ) == L"D:\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"D:/", L"C:\\abc" ) == L"D:\\C_\\abc" );
+                    // Leading slashes (without spaces) are stripped.
+                    REQUIRE( sanitize_path( slashPattern + L"abc" + spacedSlashes ) == L"abc\\_\\" );
 
-    REQUIRE( sanitized_extraction_path( L"D:\\", L"C:/abc" ) == L"D:\\C_\\abc" );
-    REQUIRE( sanitized_extraction_path( L"D:\\", L"C:\\abc" ) == L"D:\\C_\\abc" );
+                    // Spaces-only components turn into "_", combinations of slashes and spaces turn into "_\".
+                    REQUIRE( sanitize_path( spaces + spacedSlashes ) == L"_\\_\\" );
+                    REQUIRE( sanitize_path( spaces + spacedSlashes + L"abc" ) == L"_\\_\\abc" );
+                    REQUIRE( sanitize_path( spaces + spacedSlashes + spaces ) == L"_\\_\\_" );
+
+                    // Leading spaces preserved in filename component
+                    REQUIRE( sanitize_path( spaces + L"abc" + spacedSlashes ) == spaces + L"abc\\_\\" );
+                    REQUIRE( sanitize_path( spaces + spacedSlashes + spaces + L"abc" ) == L"_\\_\\" + spaces + L"abc" );
+                }
+            }
+        }
+    }
+
+    SECTION( "Complex paths with drive letters" ) {
+        const auto test = GENERATE(
+            // Drive-relative paths
+            SanitizationTest{ L"C:", L"C_" },
+            SanitizationTest{ L"C:file.txt", L"C_file.txt" },
+            SanitizationTest{ L"C:abc/def/", L"C_abc/def/" },
+            SanitizationTest{ L"C:../abc/def", L"C_../abc/def"},
+            SanitizationTest{ L"C:Test/COM0/hello?world<.txt", L"C_Test\\_COM0\\hello_world_.txt" },
+            // Absolute paths
+            SanitizationTest{ L"C:/", L"C_\\" },
+            SanitizationTest{ L"C://", L"C_\\" },
+            SanitizationTest{ L"C:/\\", L"C_\\" },
+            SanitizationTest{ L"C:\\", L"C_\\" },
+            SanitizationTest{ L"C:\\\\", L"C_\\" },
+            SanitizationTest{ L"C:\\/", L"C_\\" },
+            SanitizationTest{ L"C:/abc", L"C_\\abc" },
+            SanitizationTest{ L"C://abc", L"C_\\abc" },
+            SanitizationTest{ L"C:/\\abc", L"C_\\abc" },
+            SanitizationTest{ L"C:\\abc", L"C_\\abc" },
+            SanitizationTest{ L"C:\\\\abc", L"C_\\abc" },
+            SanitizationTest{ L"C:\\/abc", L"C_\\abc" },
+            SanitizationTest{ L"C:/abc/", L"C_\\abc\\" },
+            SanitizationTest{ L"C:\\abc\\", L"C_\\abc\\" },
+            SanitizationTest{ L"C:\\abc/", L"C_\\abc\\" },
+            SanitizationTest{ L"C:/abc/NUL/def", L"C_\\abc\\_NUL\\def" },
+            SanitizationTest{ L"C:\\abc\\NUL\\def", L"C_\\abc\\_NUL\\def" },
+            SanitizationTest{ L"C:/Test/COM0/hello?world<.txt", L"C_\\Test\\_COM0\\hello_world_.txt" },
+            SanitizationTest{ L"C:\\Test\\COM0\\hello?world<.txt", L"C_\\Test\\_COM0\\hello_world_.txt" },
+            SanitizationTest{ L"C:/Test/:hello world|/LPT5", L"C_\\Test\\_hello world_\\_LPT5" },
+            SanitizationTest{ L"C:\\Test\\:hello world|\\LPT5", L"C_\\Test\\_hello world_\\_LPT5" },
+            SanitizationTest{ L"C:/Test/<\"?*>:|/LPT5", L"C_\\Test\\_______\\_LPT5" },
+            SanitizationTest{ L"C:\\Test\\<\"?*>:|\\LPT5", L"C_\\Test\\_______\\_LPT5" }
+        );
+
+        DYNAMIC_SECTION( quoted( test.path ) << " -> " << quoted( test.expectedPath ) ) {
+            REQUIRE( sanitize_path( test.path ) == test.expectedPath );
+        }
+    }
+
+    SECTION( "Relative paths with reserved names or with invalid characters" ) {
+        const auto test = GENERATE(
+            SanitizationTest{ L"Test/COM0/hello?world<.txt", L"Test\\_COM0\\hello_world_.txt" },
+            SanitizationTest{ L"Test/:hello world|/LPT5", L"Test\\_hello world_\\_LPT5" },
+            SanitizationTest{ L"Test/<\"?*>:|/LPT5", L"Test\\_______\\_LPT5" },
+            SanitizationTest{ L"../:hello world|/LPT5", L"..\\_hello world_\\_LPT5" },
+            SanitizationTest{ L"../COM0/hello?world<.txt", L"..\\_COM0\\hello_world_.txt" },
+            SanitizationTest{ L"../<\"?*>:|/LPT5", L"..\\_______\\_LPT5" },
+            SanitizationTest{ L"./:hello world|/LPT5", L".\\_hello world_\\_LPT5" },
+            SanitizationTest{ L"./COM0/hello?world<.txt", L".\\_COM0\\hello_world_.txt" },
+            SanitizationTest{ L"./<\"?*>:|/LPT5", L".\\_______\\_LPT5" },
+            SanitizationTest{ L":hello world|/LPT5", L"_hello world_\\_LPT5" },
+            SanitizationTest{ L"COM0/hello?world<.txt", L"_COM0\\hello_world_.txt" },
+            SanitizationTest{ L"<\"?*>:|/LPT5", L"_______\\_LPT5" }
+        );
+
+        DYNAMIC_SECTION( quoted( test.path ) << " -> " << quoted( test.expectedPath ) ) {
+            // Test forward slash version
+            REQUIRE( sanitize_path( test.path ) == test.expectedPath );
+
+            // Test backslash version
+            std::wstring backslash{ test.path };
+            std::replace( backslash.begin(), backslash.end(), L'/', L'\\' );
+            REQUIRE( sanitize_path( backslash ) == test.expectedPath );
+        }
+    }
+
+    SECTION( "Non-reserved unicode filenames" ) {
+        const auto *const testPath = GENERATE( L"文件.txt", L"файл.txt", L"αβγ.txt", L"emoji😀.txt", L"COM1文件" );
+
+        DYNAMIC_SECTION( quoted( testPath ) ) {
+            REQUIRE( sanitize_path( testPath ) == testPath );
+        }
+    }
+
+    SECTION( "Edge cases" ) {
+        // We do not sanitize trailing dots, as are already ignored by the C++ output file streams.
+        const auto *const testPath = GENERATE(
+            L"abc.",
+            L"abc..",
+            L"abc...",
+            L"abc. . .",
+            L".",
+            L"..",
+            L"...",
+            L". . .",
+            L"a",
+            L"_"
+        );
+
+        DYNAMIC_SECTION( quoted( testPath ) ) {
+            REQUIRE( sanitize_path( testPath ) == testPath );
+        }
+    }
+
+    SECTION( "Normal paths without invalid characters or invalid names" ) {
+        const auto test = GENERATE(
+            SanitizationTest{ L"lorem ipsum.txt", L"lorem ipsum.txt" },
+            SanitizationTest{ L"lorem     ipsum.txt", L"lorem     ipsum.txt" },
+            SanitizationTest{ L"lorem/ipsum.txt", L"lorem/ipsum.txt" },
+            SanitizationTest{ L"lorem\\ipsum.txt", L"lorem\\ipsum.txt" }
+        );
+
+        DYNAMIC_SECTION( quoted( test.path ) ) {
+            REQUIRE( sanitize_path( test.path ) == test.expectedPath );
+        }
+    }
+
+    SECTION( "UNC paths" ) {
+        const auto test = GENERATE(
+            SanitizationTest{ L"\\\\abc\\def", L"abc\\def" },
+            SanitizationTest{ L"\\\\?\\", L"_\\" },
+            SanitizationTest{ L"\\\\?\\abc\\def", L"_\\abc\\def" },
+            SanitizationTest{ L"\\\\?\\UNC\\server\\share", L"_\\UNC\\server\\share" }
+        );
+
+        DYNAMIC_SECTION( quoted( test.path ) ) {
+            REQUIRE( sanitize_path( test.path ) == test.expectedPath );
+        }
+    }
 }
 #endif

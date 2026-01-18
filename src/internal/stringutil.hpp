@@ -15,6 +15,13 @@
 #include "internal/fsutil.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <string>
+
+#ifdef _WIN32
+#include <cwctype> // For std::towupper
+#endif
+
 namespace bit7z {
 
 #ifdef BIT7Z_USE_SYSTEM_CODEPAGE
@@ -129,6 +136,33 @@ inline auto isPathSeparator( wchar_t character ) -> bool {
     return character == L'/' || character == L'\\';
 }
 #endif
+
+template< typename CharT >
+struct to_upper;
+
+template<>
+struct to_upper< char > {
+    auto operator()( const unsigned char input ) const noexcept -> char {
+        return static_cast< char >( std::toupper( input ) );
+    }
+};
+
+#ifdef _WIN32
+template<>
+struct to_upper< wchar_t > {
+    auto operator()( const wchar_t input ) const noexcept -> wchar_t {
+        return std::towupper( input );
+    }
+};
+#endif
+
+// https://quick-bench.com/q/fJw2JI2ft7uWKvJ15xmsWIH13Zg
+template< typename CharT >
+auto to_uppercase( const std::basic_string< CharT >& str, std::size_t offset = 0 ) -> std::basic_string< CharT > {
+    std::basic_string< CharT > result{ str, offset };
+    std::transform( result.begin(), result.end(), result.begin(), to_upper< CharT >() );
+    return result;
+}
 
 } // namespace bit7z
 

@@ -12,10 +12,7 @@
 #include <catch2/catch.hpp>
 
 #include <bit7z/bit7zlibrary.hpp>
-
-#if !defined(__GNUC__) || __GNUC__ >= 5
 #include <bit7z/bitexception.hpp>
-#endif
 
 #include "utils/shared_lib.hpp"
 

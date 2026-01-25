@@ -31,6 +31,8 @@ auto InternalCategory::message( int errorValue ) const -> std::string {
             return "No indices specified.";
         case BitError::InvalidArchivePath:
             return "Invalid archive path.";
+        case BitError::InvalidDirectoryPath:
+            return "Invalid directory path.";
         case BitError::InvalidOutputBufferSize:
             return "Invalid output buffer size.";
         case BitError::InvalidCompressionMethod:
@@ -63,6 +65,10 @@ auto InternalCategory::message( int errorValue ) const -> std::string {
             return "Wrong update mode.";
         case BitError::InvalidZipPassword:
             return "7-Zip only supports printable ASCII characters for passwords when creating Zip archives.";
+        case BitError::ItemPathOutsideOutputDirectory:
+            return "The extracted item path would be outside the output directory";
+        case BitError::ItemHasAbsolutePath:
+            return "The item has an absolute path.";
         default:
             return "Unknown error.";
     }
@@ -74,6 +80,7 @@ auto InternalCategory::default_error_condition( int errorValue ) const noexcept 
         case BitError::FormatFeatureNotSupported:
         case BitError::IndicesNotSpecified:
         case BitError::InvalidArchivePath:
+        case BitError::InvalidDirectoryPath:
         case BitError::InvalidOutputBufferSize:
         case BitError::InvalidCompressionMethod:
         case BitError::InvalidDictionarySize:
@@ -92,6 +99,8 @@ auto InternalCategory::default_error_condition( int errorValue ) const noexcept 
             return std::make_error_condition( std::errc::not_supported );
         case BitError::ItemMarkedAsDeleted:
         case BitError::WrongUpdateMode:
+        case BitError::ItemPathOutsideOutputDirectory:
+        case BitError::ItemHasAbsolutePath:
             return std::make_error_condition( std::errc::operation_not_permitted );
         default:
             return error_category::default_error_condition( errorValue );

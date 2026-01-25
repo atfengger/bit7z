@@ -366,7 +366,7 @@ TEST_CASE( "fsutil: Sanitizing Windows paths", "[fsutil][sanitize_path]" ) {
     }
 
     SECTION( "COM and LPT reserved names and all their case variations" ) {
-        const auto *const reservedName = GENERATE( L"COM", L"LPT" );
+        const auto *const reservedName = GENERATE( as< const wchar_t* >(), L"COM", L"LPT" );
         const auto caseVariation = GENERATE_REF( test::casePermutations( reservedName ) );
         const auto digit = GENERATE( range( 0, 10 ) );
 
@@ -379,9 +379,9 @@ TEST_CASE( "fsutil: Sanitizing Windows paths", "[fsutil][sanitize_path]" ) {
     }
 
     SECTION( "Superscript digits in COM/LPT reserved names" ) {
-        const auto *const reservedName = GENERATE( L"COM", L"LPT" );
+        const auto *const reservedName = GENERATE( as< const wchar_t* >(), L"COM", L"LPT" );
         const auto caseVariation = GENERATE_REF( test::casePermutations( reservedName ) );
-        const auto *const superscriptDigit = GENERATE( L"¹", L"²", L"³" );
+        const auto *const superscriptDigit = GENERATE( as< const wchar_t* >(), L"¹", L"²", L"³" );
 
         const auto input = caseVariation + superscriptDigit;
         const auto expected = L"_" + input;
@@ -392,7 +392,14 @@ TEST_CASE( "fsutil: Sanitizing Windows paths", "[fsutil][sanitize_path]" ) {
     }
 
     SECTION( "Other reserved names" ) {
-        const auto *const reservedName = GENERATE( L"CON", L"PRN",L"AUX", L"NUL", L"CONIN$", L"CONOUT$" );
+        const auto *const reservedName = GENERATE( as< const wchar_t* >(),
+            L"CON",
+            L"PRN",
+            L"AUX",
+            L"NUL",
+            L"CONIN$",
+            L"CONOUT$"
+        );
         const auto caseVariation = GENERATE_REF( test::casePermutations( reservedName ) );
 
         const auto expected = L"_" + caseVariation;
@@ -405,7 +412,7 @@ TEST_CASE( "fsutil: Sanitizing Windows paths", "[fsutil][sanitize_path]" ) {
     }
 
     SECTION( "Names that look like reserved but aren't" ) {
-        const auto *const testPath = GENERATE(
+        const auto *const testPath = GENERATE( as< const wchar_t* >(),
             L"COM0.txt",  // Has extension.
             L"LPT9.txt",
             L"COM42",     // Extra letter.
@@ -443,7 +450,7 @@ TEST_CASE( "fsutil: Sanitizing Windows paths", "[fsutil][sanitize_path]" ) {
     const auto makeSpaces = []( int count ) -> std::wstring { return std::wstring( count, L' ' ); };
 
     SECTION( "Leading slashes are stripped, spaces are converted to underscores" ) {
-        const std::wstring slashPattern = GENERATE(
+        const auto slashPattern = GENERATE( as< std::wstring >(),
             L"/",
             L"\\",
             L"//",
@@ -602,7 +609,13 @@ TEST_CASE( "fsutil: Sanitizing Windows paths", "[fsutil][sanitize_path]" ) {
     }
 
     SECTION( "Non-reserved unicode filenames" ) {
-        const auto *const testPath = GENERATE( L"文件.txt", L"файл.txt", L"αβγ.txt", L"emoji😀.txt", L"COM1文件" );
+        const auto *const testPath = GENERATE( as< const wchar_t* >(),
+            L"文件.txt",
+            L"файл.txt",
+            L"αβγ.txt",
+            L"emoji😀.txt",
+            L"COM1文件"
+        );
 
         DYNAMIC_SECTION( quoted( testPath ) ) {
             REQUIRE( sanitize_path( testPath ) == testPath );
@@ -611,7 +624,7 @@ TEST_CASE( "fsutil: Sanitizing Windows paths", "[fsutil][sanitize_path]" ) {
 
     SECTION( "Edge cases" ) {
         // We do not sanitize trailing dots, as are already ignored by the C++ output file streams.
-        const auto *const testPath = GENERATE(
+        const auto *const testPath = GENERATE( as< const wchar_t* >(),
             L"abc.",
             L"abc..",
             L"abc...",
@@ -667,7 +680,7 @@ auto normalizedBasePath( const tstring& basePath ) -> fs::path {
 TEST_CASE( "fsutil: Base path normalization", "[fsutil][SafeOutPathBuilder]" ) {
     SECTION( "Path separators normalization" ) {
 #ifdef _WIN32
-        const tstring separators = GENERATE(
+        const auto separators = GENERATE( as< tstring >(),
             BIT7Z_STRING( "/" ),
             BIT7Z_STRING( "//" ),
             BIT7Z_STRING( "/////" ),
@@ -680,7 +693,7 @@ TEST_CASE( "fsutil: Base path normalization", "[fsutil][SafeOutPathBuilder]" ) {
             BIT7Z_STRING( "\\\\//" )
         );
 #else
-        const tstring separators = GENERATE(
+        const auto separators = GENERATE( as< tstring >(),
             BIT7Z_STRING( "/" ),
             BIT7Z_STRING( "//" ),
             BIT7Z_STRING( "/////" )
@@ -764,7 +777,7 @@ TEST_CASE( "fsutil: Base path normalization", "[fsutil][SafeOutPathBuilder]" ) {
 }
 
 TEST_CASE( "fsutil: Basic path building tests", "[fsutil][SafeOutPathBuilder]" ) {
-    const tstring testBasePath = GENERATE(
+    const auto testBasePath = GENERATE( as< tstring >(),
         BIT7Z_STRING( "" ),
         BIT7Z_STRING( "." ),
         BIT7Z_STRING( "./" ),
@@ -801,7 +814,7 @@ TEST_CASE( "fsutil: Basic path building tests", "[fsutil][SafeOutPathBuilder]" )
 #ifdef BIT7Z_PATH_SANITIZATION
 #   ifdef _WIN32
 TEST_CASE( "fsutil: Path building with invalid Windows item paths", "[fsutil][SafeOutPathBuilder]" ) {
-    const tstring testBasePath = GENERATE(
+    const auto testBasePath = GENERATE( as< tstring >(),
         BIT7Z_STRING( "" ),
         BIT7Z_STRING( "." ),
         BIT7Z_STRING( "/" ),
@@ -841,7 +854,7 @@ TEST_CASE( "fsutil: Path building with invalid Windows item paths", "[fsutil][Sa
 }
 #   else
 TEST_CASE( "fsutil: Path building with absolute paths", "[fsutil][SafeOutPathBuilder]" ) {
-    const std::string testBasePath = GENERATE(
+    const auto testBasePath = GENERATE( as< std::string >(),
         "",
         ".",
         "/",
@@ -866,7 +879,7 @@ TEST_CASE( "fsutil: Path building with absolute paths", "[fsutil][SafeOutPathBui
 
 
 TEST_CASE( "fsutil: Path building with paths with dot components", "[fsutil][SafeOutPathBuilder]" ) {
-    const tstring testBasePath = GENERATE(
+    const auto testBasePath = GENERATE( as< tstring >(),
         BIT7Z_STRING( "" ),
         BIT7Z_STRING( "." ),
         BIT7Z_STRING( "/" ),
@@ -908,7 +921,7 @@ TEST_CASE( "fsutil: Path building with paths with dot components", "[fsutil][Saf
 }
 
 TEST_CASE( "fsutil: Path building with an empty path should return the base path", "[fsutil][SafeOutPathBuilder]" ) {
-    const tstring testBasePath = GENERATE(
+    const auto testBasePath = GENERATE( as< tstring >(),
         BIT7Z_STRING( "" ),
         BIT7Z_STRING( "." ),
         BIT7Z_STRING( "/" ),
@@ -931,7 +944,7 @@ TEST_CASE( "fsutil: Path building with an empty path should return the base path
 }
 #else
 TEST_CASE( "fsutil: Path building with absolute paths should fail", "[fsutil][SafeOutPathBuilder]" ) {
-    const tstring testBasePath = GENERATE(
+    const auto testBasePath = GENERATE( as< tstring >(),
         BIT7Z_STRING( "" ),
         BIT7Z_STRING( "." ),
         BIT7Z_STRING( "/" ),
@@ -989,7 +1002,7 @@ TEST_CASE( "fsutil: Path building with absolute paths should fail", "[fsutil][Sa
 }
 
 TEST_CASE( "fsutil: Path building with relative paths", "[fsutil][SafeOutPathBuilder]" ) {
-    const tstring testBasePath = GENERATE(
+    const auto testBasePath = GENERATE( as< tstring >(),
         BIT7Z_STRING( "" ),
         BIT7Z_STRING( "." ),
         BIT7Z_STRING( "/" ),
@@ -1029,7 +1042,7 @@ TEST_CASE( "fsutil: Path building with relative paths", "[fsutil][SafeOutPathBui
 #   ifdef _WIN32
 TEST_CASE( "fsutil: Path building with Windows' drive-relative paths", "[fsutil][SafeOutPathBuilder]" ) {
     SECTION ( "Simple drive-relative paths (same root as base path)" ) {
-        const tstring testBasePath = GENERATE(
+        const auto testBasePath = GENERATE( as< tstring >(),
             BIT7Z_STRING( "" ),
             BIT7Z_STRING( "." ),
             BIT7Z_STRING( "/" ),
@@ -1156,7 +1169,7 @@ TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][Saf
     SECTION( "Edge cases (substring)" ) {
         // https://www.sonarsource.com/blog/openrefine-zip-slip/
 #ifdef _WIN32
-        const tstring testBasePath = GENERATE(
+        const auto testBasePath = GENERATE( as< tstring >(),
             BIT7Z_STRING( "C:/Users/john" ),
             BIT7Z_STRING( "C:/Users/john/" )
         );
@@ -1166,7 +1179,7 @@ TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][Saf
             L"C:/Users/johnny/.ssh/id_rsa"
         );
 #else
-        const tstring testBasePath = GENERATE(
+        const auto testBasePath = GENERATE( as< tstring >(),
             BIT7Z_STRING( "/home/john" ),
             BIT7Z_STRING( "/home/john/" )
         );
@@ -1191,7 +1204,7 @@ TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][Saf
     }
 
     SECTION( "Edge cases (inside)" ) {
-        const tstring testBasePath = GENERATE(
+        const auto testBasePath = GENERATE( as< tstring >(),
             BIT7Z_STRING( "" ),
             BIT7Z_STRING( "." ),
             BIT7Z_STRING( "/" ),

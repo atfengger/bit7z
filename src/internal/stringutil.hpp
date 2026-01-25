@@ -15,6 +15,7 @@
 #include "internal/fsutil.hpp"
 
 #include <algorithm>
+#include <cctype> // For std::toupper
 #include <cstddef>
 #include <string>
 

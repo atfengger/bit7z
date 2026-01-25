@@ -14,16 +14,7 @@
 
 #include "internal/stringutil.hpp"
 
-#ifdef _WIN32
-#include <windows.h>
-#ifdef BIT7Z_USE_SYSTEM_CODEPAGE
-#define CODEPAGE CP_ACP
-#define CODEPAGE_WC_FLAGS WC_NO_BEST_FIT_CHARS
-#else
-#define CODEPAGE CP_UTF8
-#define CODEPAGE_WC_FLAGS 0
-#endif
-#else
+#ifndef _WIN32
 #ifndef BIT7Z_USE_STANDARD_FILESYSTEM
 // GCC 4.9 doesn't have the <codecvt> header; as a workaround,
 // we use GHC filesystem's utility functions for string conversions.
@@ -40,14 +31,23 @@ using convert_type = std::codecvt_utf8< wchar_t >;
 
 namespace bit7z {
 
-#if !defined( _WIN32 ) || !defined( BIT7Z_USE_NATIVE_STRING )
-auto narrow( const wchar_t* wideString, size_t size ) -> std::string {
+#ifdef _WIN32
+#ifdef BIT7Z_USE_SYSTEM_CODEPAGE
+constexpr auto kCodePageWcFlags = WC_NO_BEST_FIT_CHARS;
+#else
+constexpr auto kCodePageWcFlags = 0;
+#endif
+
+auto narrow( const wchar_t* wideString, std::size_t size, unsigned codePage ) -> std::string {
+#else
+auto narrow( const wchar_t* wideString, std::size_t size ) -> std::string {
+#endif
     if ( wideString == nullptr || size == 0 ) {
         return "";
     }
 #ifdef _WIN32
-    const int narrowStringSize = WideCharToMultiByte( CODEPAGE,
-                                                      CODEPAGE_WC_FLAGS,
+    const int narrowStringSize = WideCharToMultiByte( codePage,
+                                                      kCodePageWcFlags,
                                                       wideString,
                                                       static_cast< int >( size ),
                                                       nullptr,
@@ -59,8 +59,8 @@ auto narrow( const wchar_t* wideString, size_t size ) -> std::string {
     }
 
     std::string result( static_cast< std::string::size_type >( narrowStringSize ), 0 );
-    WideCharToMultiByte( CODEPAGE,
-                         CODEPAGE_WC_FLAGS,
+    WideCharToMultiByte( codePage,
+                         kCodePageWcFlags,
                          wideString,
                          -1,
                          &result[ 0 ],  // NOLINT(readability-container-data-pointer)
@@ -78,10 +78,11 @@ auto narrow( const wchar_t* wideString, size_t size ) -> std::string {
 #endif
 }
 
+#if !defined( _WIN32 ) || !defined( BIT7Z_USE_NATIVE_STRING )
 auto widen( const std::string& narrowString ) -> std::wstring {
 #ifdef _WIN32
     const int narrowStringSize = static_cast< int >( narrowString.size() );
-    const int wideStringSize = MultiByteToWideChar( CODEPAGE,
+    const int wideStringSize = MultiByteToWideChar( kDefaultCodePage,
                                                     0,
                                                     narrowString.c_str(),
                                                     narrowStringSize,
@@ -92,7 +93,7 @@ auto widen( const std::string& narrowString ) -> std::wstring {
     }
 
     std::wstring result( static_cast< std::wstring::size_type >( wideStringSize ), 0 );
-    MultiByteToWideChar( CODEPAGE,
+    MultiByteToWideChar( kDefaultCodePage,
                          0,
                          narrowString.c_str(),
                          narrowStringSize,

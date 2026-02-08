@@ -807,6 +807,7 @@ TEST_CASE( "fsutil: Basic path building tests", "[fsutil][SafeOutPathBuilder]" )
 
     DYNAMIC_SECTION( quoted( testItemPath ) << " inside base path " << quoted( testBasePath ) ) {
         const SafeOutPathBuilder builder{ testBasePath };
+        INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
         REQUIRE( builder.buildPath( testItemPath ) == builder.basePath() / testItemPath );
     }
 }
@@ -849,6 +850,7 @@ TEST_CASE( "fsutil: Path building with invalid Windows item paths", "[fsutil][Sa
 
     DYNAMIC_SECTION( quoted( testItemPath ) << " inside base path " << quoted( testBasePath ) ) {
         const SafeOutPathBuilder builder{ testBasePath };
+        INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
         REQUIRE( builder.buildPath( testItemPath ) == builder.basePath() / sanitize_path( testItemPath ) );
     }
 }
@@ -872,6 +874,7 @@ TEST_CASE( "fsutil: Path building with absolute paths", "[fsutil][SafeOutPathBui
 
     DYNAMIC_SECTION( quoted( testItemPath ) << " inside base path " << quoted( testBasePath ) ) {
         const SafeOutPathBuilder builder{ testBasePath };
+        INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
         REQUIRE( builder.buildPath( testItemPath ) == builder.basePath() / testItemPath.relative_path() );
     }
 }
@@ -914,6 +917,7 @@ TEST_CASE( "fsutil: Path building with paths with dot components", "[fsutil][Saf
 
     DYNAMIC_SECTION( quoted( testItemPath ) << " inside base path " << quoted( testBasePath ) ) {
         const SafeOutPathBuilder builder{ testBasePath };
+        INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
         REQUIRE( builder.buildPath( testItemPath ) == builder.basePath() / "" );
         REQUIRE( builder.buildPath( testItemPath / "abc" ) == builder.basePath() / "abc" );
         REQUIRE( builder.buildPath( testItemPath / "subdir/file.txt" ) == builder.basePath() / "subdir/file.txt" );
@@ -939,6 +943,7 @@ TEST_CASE( "fsutil: Path building with an empty path should return the base path
 
     DYNAMIC_SECTION( "empty path item inside base path " << quoted( testBasePath ) ) {
         const SafeOutPathBuilder builder{ testBasePath };
+        INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
         REQUIRE( builder.buildPath( "" ) == builder.basePath() );
     }
 }
@@ -988,6 +993,7 @@ TEST_CASE( "fsutil: Path building with absolute paths should fail", "[fsutil][Sa
 
     DYNAMIC_SECTION( quoted( testItemPath ) << " inside base path " << quoted( testBasePath ) ) {
         const SafeOutPathBuilder builder{ testBasePath };
+        INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
         REQUIRE_THROWS_MATCHES(
             builder.buildPath( testItemPath ),
             BitException,
@@ -1035,6 +1041,7 @@ TEST_CASE( "fsutil: Path building with relative paths", "[fsutil][SafeOutPathBui
 #   endif
     DYNAMIC_SECTION( quoted( testItemPath ) << " inside base path " << quoted( testBasePath ) ) {
         const SafeOutPathBuilder builder{ testBasePath };
+        INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
         REQUIRE( builder.buildPath( testItemPath ) == builder.basePath() / testItemPath.relative_path() );
     }
 }
@@ -1071,6 +1078,7 @@ TEST_CASE( "fsutil: Path building with Windows' drive-relative paths", "[fsutil]
 
         DYNAMIC_SECTION( quoted( testItemPath ) << " inside base path " << quoted( testBasePath ) ) {
             const SafeOutPathBuilder builder{ testBasePath };
+            INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
             REQUIRE( builder.buildPath( testItemPath ) == builder.basePath() / testItemPath.relative_path() );
         }
     }
@@ -1078,11 +1086,13 @@ TEST_CASE( "fsutil: Path building with Windows' drive-relative paths", "[fsutil]
 #   endif
 #endif
 
+namespace {
 struct PathBuildTest {
     tstring basePath;
     fs::path itemPath;
     fs::path expectedPath;
 };
+} // namespace
 
 TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][SafeOutPathBuilder]" ) {
     SECTION( "Basic ZipSlip attack" ) {
@@ -1094,7 +1104,7 @@ TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][Saf
             BIT7Z_STRING( "/out" ),
             BIT7Z_STRING( "out/dir" ),
             BIT7Z_STRING( "/out/dir" ),
-            // Note: C: is the current directory on the drive C, C:\\ is the root directory of the drive C
+            // Note: On Windows, C: is the current directory on the drive C, C:\\ is the root directory of the drive C.
             BIT7Z_STRING( "C:" ),
             // NOTE: On Windows, the following are absolute paths.
             BIT7Z_STRING( "C:/out" ),
@@ -1117,6 +1127,9 @@ TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][Saf
             BIT7Z_NATIVE_STRING( "C:../../../" )
         );
 
+        const auto oldCurrentPath = fs::current_path();
+        fs::current_path( test::filesystem::user_dir() );
+
         DYNAMIC_SECTION(
             "Building output path for " << quoted( slipPath ) << " "
             "inside base path " << quoted( testBasePath ) << " should fail"
@@ -1134,6 +1147,8 @@ TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][Saf
                 )
             );
         }
+
+        fs::current_path( oldCurrentPath );
     }
 
     SECTION( "Near zip attacks" ) {
@@ -1159,7 +1174,7 @@ TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][Saf
         );
 
         // The base path is the root directory, and notEvil.txt is expected to be inside the root directory.
-        const auto expectedPath = fs::absolute( "/notEvil.txt" );
+        const auto expectedPath = fs::absolute( testBasePath ) / "notEvil.txt";
 
         DYNAMIC_SECTION( nearSlipPath << " inside base path " << quoted( testBasePath ) ) {
             const SafeOutPathBuilder builder{ testBasePath };
@@ -1199,11 +1214,12 @@ TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][Saf
         REQUIRE_THROWS( builder.buildPath( testItemPath ) );
 #else
         DYNAMIC_SECTION( quoted( testItemPath ) << " inside base path " << quoted( testBasePath ) ) {
-            const SafeOutPathBuilder sanitizer{ testBasePath };
+            const SafeOutPathBuilder builder{ testBasePath };
+            INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
 #ifdef _WIN32
-            REQUIRE( sanitizer.buildPath( testItemPath ) == sanitizer.basePath() / sanitize_path( testItemPath ) );
+            REQUIRE( builder.buildPath( testItemPath ) == builder.basePath() / sanitize_path( testItemPath ) );
 #else
-            REQUIRE( sanitizer.buildPath( testItemPath ) == sanitizer.basePath() / testItemPath.relative_path() );
+            REQUIRE( builder.buildPath( testItemPath ) == builder.basePath() / testItemPath.relative_path() );
 #endif
         }
 #endif

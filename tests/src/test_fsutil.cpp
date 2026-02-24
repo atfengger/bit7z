@@ -1079,7 +1079,11 @@ TEST_CASE( "fsutil: Path building with Windows' drive-relative paths", "[fsutil]
         DYNAMIC_SECTION( quoted( testItemPath ) << " inside base path " << quoted( testBasePath ) ) {
             const SafeOutPathBuilder builder{ testBasePath };
             INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
-            REQUIRE( builder.buildPath( testItemPath ) == builder.basePath() / testItemPath.relative_path() );
+            if ( testItemPath.root_name() != builder.basePath().root_name() ) {
+                REQUIRE_THROWS( builder.buildPath( testItemPath ) );
+            } else {
+                REQUIRE( builder.buildPath( testItemPath ) == builder.basePath() / testItemPath.relative_path() );
+            }
         }
     }
 }
@@ -1095,7 +1099,7 @@ struct PathBuildTest {
 } // namespace
 
 TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][SafeOutPathBuilder]" ) {
-    SECTION( "Basic ZipSlip attack" ) {
+    SECTION( "Basic ZipSlip attacks" ) {
         const auto testBasePath = GENERATE( as< tstring >(),
             BIT7Z_STRING( "" ),
             BIT7Z_STRING( "." ),
@@ -1150,6 +1154,47 @@ TEST_CASE( "fsutil: Check if extracted path is outside base path", "[fsutil][Saf
 
         fs::current_path( oldCurrentPath );
     }
+
+#if defined( _WIN32 ) && !defined( BIT7Z_PATH_SANITIZATION )
+    SECTION( "Basic ZipSlip attacks with drive-relative path" ) {
+        const auto testBasePath = GENERATE( as< tstring >(),
+            BIT7Z_STRING( "" ),
+            BIT7Z_STRING( "." ),
+            BIT7Z_STRING( ".." ),
+            BIT7Z_STRING( "out" ),
+            BIT7Z_STRING( "/out" ),
+            BIT7Z_STRING( "out/dir" ),
+            BIT7Z_STRING( "/out/dir" ),
+            // Note: On Windows, C: is the current directory on the drive C, C:\\ is the root directory of the drive C.
+            BIT7Z_STRING( "C:" ),
+            // NOTE: On Windows, the following are absolute paths.
+            BIT7Z_STRING( "C:/out" ),
+            BIT7Z_STRING( "C:/out/dir" )
+        );
+
+        const auto oldCurrentPath = fs::current_path();
+        fs::current_path( test::filesystem::user_dir() );
+
+        const SafeOutPathBuilder builder{ testBasePath };
+        INFO( "Sanitized base path: " << quoted( builder.basePath() ) )
+
+        const auto slipPath = GENERATE_REF( as< fs::path >(),
+            // <base path drive letter>:..
+            std::wstring{ builder.basePath().native()[0] } + BIT7Z_NATIVE_STRING( ":.." ),
+            // Path with uncommon root drive letter different from the base path drive letter.
+            L"A:.."
+        );
+
+        DYNAMIC_SECTION(
+            "Building output path for " << quoted( slipPath ) << " "
+            "inside base path " << quoted( testBasePath ) << " should fail"
+        ) {
+            REQUIRE_THROWS( builder.buildPath( slipPath ) );
+        }
+
+        fs::current_path( oldCurrentPath );
+    }
+#endif
 
     SECTION( "Near zip attacks" ) {
 #ifdef _WIN32

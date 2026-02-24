@@ -18,6 +18,25 @@
 #include "internal/windows.hpp"
 
 namespace bit7z { // NOLINT(modernize-concat-nested-namespaces)
+
+class SafeOutPathBuilder final {
+    fs::path mBasePath;
+
+    public:
+        explicit SafeOutPathBuilder( const tstring& basePath );
+
+        BIT7Z_NODISCARD
+        auto buildPath( const fs::path& path ) const -> fs::path;
+
+#ifndef _WIN32
+        BIT7Z_NODISCARD
+        auto restoreSymlink( const fs::path& symlinkFilePath ) const -> bool;
+#endif
+
+        BIT7Z_NODISCARD
+        auto basePath() const -> const fs::path&;
+};
+
 namespace filesystem {
 
 enum struct SymlinkPolicy {
@@ -45,7 +64,11 @@ auto set_file_time( const fs::path& filePath, FILETIME creation, FILETIME access
 auto set_file_modified_time( const fs::path& filePath, FILETIME ftModified ) noexcept -> bool;
 #endif
 
-auto set_file_attributes( const fs::path& filePath, DWORD attributes ) noexcept -> bool;
+auto set_file_attributes(
+    const SafeOutPathBuilder& pathBuilder,
+    const fs::path& filePath,
+    DWORD attributes
+) noexcept -> bool;
 
 BIT7Z_NODISCARD auto in_archive_path( const fs::path& filePath,
                                       const fs::path& searchPath = fs::path{} ) -> fs::path;
@@ -79,13 +102,12 @@ void increase_opened_files_limit();
  *
  * @return the sanitized path, where illegal characters are replaced with the '_' character.
  */
+BIT7Z_NODISCARD
 auto sanitize_path( const fs::path& path ) -> fs::path;
-
-auto sanitized_extraction_path( const fs::path& outDir, const fs::path& itemPath ) -> fs::path;
 #endif
 
-}  // namespace fsutil
-}  // namespace filesystem
-}  // namespace bit7z
+} // namespace fsutil
+} // namespace filesystem
+} // namespace bit7z
 
 #endif // FSUTIL_HPP

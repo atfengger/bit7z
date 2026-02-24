@@ -29,6 +29,8 @@
 #include <catch2/catch.hpp>
 #include <internal/fs.hpp>
 
+#include <cstdlib>
+
 namespace bit7z { // NOLINT(modernize-concat-nested-namespaces)
 namespace test {
 namespace filesystem {
@@ -54,6 +56,44 @@ inline auto exe_path() -> fs::path {
 constexpr auto test_data_dir = BIT7Z_TESTS_DATA_DIR;
 constexpr auto test_filesystem_dir = BIT7Z_TESTS_DATA_DIR "/test_filesystem";
 constexpr auto test_archives_dir = BIT7Z_TESTS_DATA_DIR "/test_archives";
+
+#ifdef _WIN32
+inline auto getenv( const wchar_t* name ) -> std::wstring {
+    std::size_t requiredSize = 0;
+    _wgetenv_s( &requiredSize, nullptr, 0, name );
+    if ( requiredSize == 0 ) {
+        return {}; // The environment variable doesn't exist.
+    }
+
+    std::wstring result( requiredSize, L'\0' );
+    // NOLINTNEXTLINE(*-container-data-pointer, *-pro-bounds-avoid-unchecked-container-access)
+    _wgetenv_s( &requiredSize, &result[0], requiredSize, name );
+    return result;
+}
+#endif
+
+inline auto user_dir() -> fs::path {
+#ifdef _WIN32
+    auto userProfile = getenv( L"USERPROFILE" );
+    if (!userProfile.empty()) {
+        return std::move( userProfile );
+    }
+
+    auto homeDrive = getenv( L"HOMEDRIVE" );
+    if (homeDrive.empty()) {
+        return {};
+    }
+
+    auto homePath = getenv( L"HOMEPATH" );
+    if (homePath.empty()) {
+        return {};
+    }
+
+    return fs::path{ std::move( homeDrive ) } / std::move( homePath );
+#else
+    return std::getenv( "HOME" );
+#endif
+}
 
 inline auto current_dir() -> fs::path {
     std::error_code error;

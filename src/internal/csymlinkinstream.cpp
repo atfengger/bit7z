@@ -13,12 +13,27 @@
 #include "internal/csymlinkinstream.hpp"
 #include "internal/util.hpp"
 
+#ifdef _WIN32
+#include "internal/stringutil.hpp" // For bit7z::narrow
+#endif
+
+#include <string>
+#include <system_error>
+
 namespace bit7z {
 
-auto read_symlink_as_string( const fs::path& symlinkPath ) noexcept -> std::string {
+namespace {
+auto read_symlink_as_string( const fs::path& symlinkPath ) -> std::string {
     std::error_code error;
-    return fs::read_symlink( symlinkPath, error ).u8string();
+    const auto symlinkValue = fs::read_symlink( symlinkPath, error );
+#ifndef _WIN32
+    return symlinkValue.string();
+#else
+    const auto& nativePath = symlinkValue.native();
+    return narrow( nativePath.c_str(), nativePath.size(), CP_UTF8 );
+#endif
 }
+} // namespace
 
 CSymlinkInStream::CSymlinkInStream( const fs::path& symlinkPath )
     : mStream{ read_symlink_as_string( symlinkPath ) },

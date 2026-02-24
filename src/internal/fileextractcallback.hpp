@@ -14,6 +14,7 @@
 
 #include "internal/cfileoutstream.hpp"
 #include "internal/extractcallback.hpp"
+#include "internal/fsutil.hpp"
 #include "internal/processeditem.hpp"
 
 namespace bit7z {
@@ -36,7 +37,7 @@ class FileExtractCallback final : public ExtractCallback {
 
     private:
         fs::path mInFilePath;     // Input file path
-        fs::path mDirectoryPath;  // Output directory
+        SafeOutPathBuilder mOutPathBuilder;
         fs::path mFilePathOnDisk; // Full path to the file on disk
         bool mRetainDirectories;
 

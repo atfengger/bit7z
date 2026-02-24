@@ -6,7 +6,7 @@ image:
   - Visual Studio 2017
   - Visual Studio 2019
   - Visual Studio 2022
-  - Ubuntu
+  - Ubuntu2204
 
 environment:
   bit7z_version: $(APPVEYOR_REPO_TAG_NAME)
@@ -87,18 +87,18 @@ matrix:
       compiler: gcc
     - image: Visual Studio 2022
       compiler: clang
-    - image: Ubuntu
+    - image: Ubuntu2204
       compiler: msvc
-    - image: Ubuntu
+    - image: Ubuntu2204
       compiler: msvc_mt
-    - image: Ubuntu
+    - image: Ubuntu2204
       compiler: mingw
 
 for:
 -
   matrix:
     only:
-      - image: Ubuntu
+      - image: Ubuntu2204
 
   init: |-
     if [ "${compiler}" = "gcc" ];
@@ -109,8 +109,9 @@ for:
     fi
     if [ "${arch}" = "x86" ];
     then
+      sudo dpkg --add-architecture i386;
       sudo apt-get update;
-      sudo apt-get install -y g++-9-multilib;
+      sudo apt-get install -y g++-9-multilib g++-multilib;
     fi
 
   before_build:
@@ -198,7 +199,7 @@ deploy:
   tag: $(APPVEYOR_REPO_TAG_NAME)
   description: 'Binaries of Bit7z %bit7z_version%'
   auth_token:
-    secure: aaQkoEIZv7oaBSZT2f/bST7NfLOdqKXitnhWmUqaW1T493Pr2/atcZWHIlExsLAx
+    secure: 6pdVHTqUdC/RroPCFMLAYFs9qd7qn5QlYKdBO8x4t9a9Kd0rxI67WyGkYHgZQ3w9
   artifact: /.*\.7z/
   draft: true
   prerelease: false

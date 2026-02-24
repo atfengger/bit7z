@@ -11,19 +11,37 @@
 #define STRINGUTIL_HPP
 
 #include "bittypes.hpp"
+#include "bitwindows.hpp"
 #include "internal/fsutil.hpp"
 
 #include <algorithm>
+#include <cctype> // For std::toupper
+#include <cstddef>
+#include <string>
+
+#ifdef _WIN32
+#include <cwctype> // For std::towupper
+#endif
+
 namespace bit7z {
+
+#ifdef BIT7Z_USE_SYSTEM_CODEPAGE
+constexpr auto kDefaultCodePage = CP_ACP;
+#else
+constexpr auto kDefaultCodePage = CP_UTF8;
+#endif
+
+#ifdef _WIN32
+auto narrow( const wchar_t* wideString, std::size_t size, unsigned codePage = kDefaultCodePage ) -> std::string;
+#else
+auto narrow( const wchar_t* wideString, std::size_t size ) -> std::string;
+#endif
 
 #if defined( BIT7Z_USE_NATIVE_STRING ) && defined( _WIN32 )
 // On Windows, with native strings enabled, strings are already wide!
 #   define WIDEN( tstr ) tstr
 #else
 #   define WIDEN( tstr ) bit7z::widen(tstr)
-
-auto narrow( const wchar_t* wideString, size_t size ) -> std::string;
-
 auto widen( const std::string& narrowString ) -> std::wstring;
 #endif
 
@@ -119,6 +137,33 @@ inline auto isPathSeparator( wchar_t character ) -> bool {
     return character == L'/' || character == L'\\';
 }
 #endif
+
+template< typename CharT >
+struct to_upper;
+
+template<>
+struct to_upper< char > {
+    auto operator()( const unsigned char input ) const noexcept -> char {
+        return static_cast< char >( std::toupper( input ) );
+    }
+};
+
+#ifdef _WIN32
+template<>
+struct to_upper< wchar_t > {
+    auto operator()( const wchar_t input ) const noexcept -> wchar_t {
+        return std::towupper( input );
+    }
+};
+#endif
+
+// https://quick-bench.com/q/fJw2JI2ft7uWKvJ15xmsWIH13Zg
+template< typename CharT >
+auto to_uppercase( const std::basic_string< CharT >& str, std::size_t offset = 0 ) -> std::basic_string< CharT > {
+    std::basic_string< CharT > result{ str, offset };
+    std::transform( result.begin(), result.end(), result.begin(), to_upper< CharT >() );
+    return result;
+}
 
 } // namespace bit7z
 

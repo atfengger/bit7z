@@ -1,7 +1,15 @@
 # Downloading the CPM.cmake package manager
-set( CPM_DOWNLOAD_VERSION 0.40.2 )
-set( CPM_DOWNLOAD_HASH "c8cdc32c03816538ce22781ed72964dc864b2a34a310d3b7104812a5ca2d835d" )
-set( CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake" )
+set( CPM_DOWNLOAD_VERSION 0.42.0 )
+set( CPM_DOWNLOAD_HASH "2020b4fc42dba44817983e06342e682ecfc3d2f484a581f11cc5731fbe4dce8a" )
+if( CPM_SOURCE_CACHE )
+    set( CPM_DOWNLOAD_LOCATION "${CPM_SOURCE_CACHE}/cpm/CPM_${CPM_DOWNLOAD_VERSION}.cmake" )
+elseif( DEFINED ENV{CPM_SOURCE_CACHE} )
+    set( CPM_DOWNLOAD_LOCATION "$ENV{CPM_SOURCE_CACHE}/cpm/CPM_${CPM_DOWNLOAD_VERSION}.cmake" )
+else()
+    set( CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake" )
+endif()
+get_filename_component( CPM_DOWNLOAD_LOCATION ${CPM_DOWNLOAD_LOCATION} ABSOLUTE )
+set( CPM_USE_NAMED_CACHE_DIRECTORIES ON )
 if( NOT ( EXISTS ${CPM_DOWNLOAD_LOCATION} ) )
     message( STATUS "Downloading CPM.cmake to ${CPM_DOWNLOAD_LOCATION}" )
     file( DOWNLOAD
@@ -30,7 +38,7 @@ endif()
 if( NOT USE_STANDARD_FILESYSTEM OR NOT STANDARD_FILESYSTEM_COMPILES OR BIT7Z_BUILD_TESTS )
     CPMAddPackage( NAME ghc_filesystem
                    GITHUB_REPOSITORY rikyoz/filesystem
-                   GIT_TAG 983650f374699e3979f9cdefe13ddff60bd4ac68
+                   GIT_TAG b99c2aebd5ddd6fb2f190731ba80b949fc3842b5
                    DOWNLOAD_ONLY YES )
     if( ghc_filesystem_ADDED )
         message( STATUS "ghc::filesystem source code available at ${ghc_filesystem_SOURCE_DIR}" )

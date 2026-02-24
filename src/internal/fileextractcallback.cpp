@@ -24,7 +24,7 @@ namespace bit7z {
 FileExtractCallback::FileExtractCallback( const BitInputArchive& inputArchive, const tstring& directoryPath )
     : ExtractCallback( inputArchive ),
       mInFilePath( tstring_to_path( inputArchive.archivePath() ) ),
-      mDirectoryPath( tstring_to_path( directoryPath ) ),
+      mOutPathBuilder( directoryPath ),
       mRetainDirectories( inputArchive.handler().retainDirectories() ) {}
 
 void FileExtractCallback::releaseStream() {
@@ -59,7 +59,7 @@ auto FileExtractCallback::finishOperation( OperationResult operationResult ) -> 
 #endif
 
     if ( mCurrentItem.areAttributesDefined() ) {
-        filesystem::fsutil::set_file_attributes( mFilePathOnDisk, mCurrentItem.attributes() );
+        filesystem::fsutil::set_file_attributes( mOutPathBuilder, mFilePathOnDisk, mCurrentItem.attributes() );
     }
     return result;
 }
@@ -85,11 +85,8 @@ auto FileExtractCallback::getOutStream( uint32_t index, ISequentialOutStream** o
     if ( filePath.empty() || ( isItemFolder( index ) && filePath == L"/" ) ) {
         return S_OK;
     }
-#if defined( _WIN32 ) && defined( BIT7Z_PATH_SANITIZATION )
-    mFilePathOnDisk = filesystem::fsutil::sanitized_extraction_path( mDirectoryPath, filePath );
-#else
-    mFilePathOnDisk = mDirectoryPath / filePath;
-#endif
+
+    mFilePathOnDisk = mOutPathBuilder.buildPath( filePath );
 
 #if defined( _WIN32 ) && defined( BIT7Z_AUTO_PREFIX_LONG_PATHS )
     if ( filesystem::fsutil::should_format_long_path( mFilePathOnDisk ) ) {
